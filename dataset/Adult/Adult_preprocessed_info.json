@@ -36,6 +36,5 @@
     ],
     "categorical_feature_count": 0,
     "categorical_feature_idx": [],
-    "unique_values_per_categorical_feature": {},
-    "autoencoder_duration": 16.96384835243225
+    "unique_values_per_categorical_feature": {}
 }

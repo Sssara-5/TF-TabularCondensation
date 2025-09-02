@@ -38,10 +38,6 @@ def dict2obj(d):
 @click.pass_context
 
 def cli(ctx, **kwargs):
-    """
-    Command-line interface for processing parameters using Click.
-    """
-    # Convert parameters into an object-like structure (similar to argparse.Namespace)
     args = dict2obj(kwargs)
 
     device_id = int(args.device) 

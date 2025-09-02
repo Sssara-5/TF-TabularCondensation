@@ -81,7 +81,7 @@ Below are example commands to run condensation and evaluation. Replace dataset n
 **Adult (reduction ratio 0.1 percent)**
 
 ```bash
-python src/CCTC.py --dataset Adult --reduction 0.001 --out_dir outputs/covtype_0_1
+python src/CCTC.py --dataset Adult --reduction 0.001 --out_dir outputs/adult_0_1
 ```
 
 **electricity (reduction ratio 0.01 percent)**
@@ -99,7 +99,7 @@ Key flags:
 ### 2) Evaluate a condensed set
 
 ```bash
-python src/eval_syn_ours.py --dataset Adult --syn_dir outputs/covtype_0_1
+python src/eval_syn_ours.py --dataset Adult --syn_dir outputs/adult_0_1
 ```
 
 This trains standard tabular models on the condensed data and reports metrics on the original test split.
