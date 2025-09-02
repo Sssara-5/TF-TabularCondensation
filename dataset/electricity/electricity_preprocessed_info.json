@@ -1,0 +1,26 @@
+{
+    "class_count": 2,
+    "feature_count": 7,
+    "attr_name": [
+        "date",
+        "period",
+        "nswprice",
+        "nswdemand",
+        "vicprice",
+        "vicdemand",
+        "transfer"
+    ],
+    "numerical_feature_count": 7,
+    "numerical_feature_idx": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+    ],
+    "categorical_feature_count": 0,
+    "categorical_feature_idx": [],
+    "unique_values_per_categorical_feature": {}
+}
