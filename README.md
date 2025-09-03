@@ -48,24 +48,26 @@ Example layout:
 
 ```
 TF-TabularCondensation
-  ├── dataset
-  │   ├── Adult
-  │   │   ├── Adult_preprocessed_info.json
-  │   │   ├── Adult_train.csv
-  │   │   ├── Adult_val.csv
-  │   │   └── Adult_test.csv
-  │   └── electricity
-  │       ├── electricity_preprocessed_info.json
-  │       ├── electricity_train.csv
-  │       ├── electricity_val.csv
-  │       └── electricity_test.csv
-  ├── src
-  │   ├── CCTC.py
-  │   ├── config.py
-  │   ├── eval_syn_ours.py
-  │   ├── loader_ours.py
-  │   └── loader_syn_ours.py
-  └── README.md
+ ├── Appendix
+ │    └── Appendix.pdf
+ ├── dataset
+ │   ├── Adult
+ │   │   ├── Adult_preprocessed_info.json
+ │   │   ├── Adult_train.csv
+ │   │   ├── Adult_val.csv
+ │   │   └── Adult_test.csv
+ │   └── electricity
+ │       ├── electricity_preprocessed_info.json
+ │       ├── electricity_train.csv
+ │       ├── electricity_val.csv
+ │       └── electricity_test.csv
+ ├── src
+ │   ├── CCTC.py
+ │   ├── config.py
+ │   ├── eval_syn_ours.py
+ │   ├── loader_ours.py
+ │   └── loader_syn_ours.py
+ └── README.md
 ```
 
 You can update default paths and options in `src/config.py` if needed.
@@ -105,5 +107,9 @@ python src/eval_syn_ours.py --dataset Adult --syn_dir outputs/adult_0_1
 This trains standard tabular models on the condensed data and reports metrics on the original test split.
 
 ---
+
+## 📑 Appendix
+
+The **Online Appendix** with additional proofs is included in the `Appendix/` folder.
 
 
