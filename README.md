@@ -1,6 +1,6 @@
 # TF-TabularCondensation
 
-Official implementation of **“Training-Free Tabular Data Condensation via Class-Adaptive Clustering”**.
+Official implementation of **“C²TC: A Training-Free Framework for Efficient Tabular Data Condensation”**.
 
 ---
 
