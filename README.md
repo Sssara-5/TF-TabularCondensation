@@ -6,7 +6,7 @@ Official implementation of **“C²TC: A Training-Free Framework for Efficient T
 
 ## 📦 Installation
 
-Follow the steps below to set up TF-TabularCondensation for local development.
+Follow the steps below to set up C²TC for local development.
 
 ### 1) Clone the repo
 
@@ -18,7 +18,7 @@ cd TF-TabularCondensation
 ### 2) Environment (Conda recommended)
 
 ```bash
-conda env create -f environment.yml
+conda env create -f src/environment.yml
 conda activate cctc
 ```
 
@@ -27,20 +27,15 @@ conda activate cctc
 ## 🚀 Quick start
 
 ```bash
-conda activate cctc
+cd src
 bash run_pipeline.sh
 ```
 
 Or without activating the shell:
 
 ```bash
-conda run -n cctc --no-capture-output ./run_pipeline.sh
-```
-
-Run the above from the directory that contains `environment.yml` and `run_pipeline.sh`. After activating `cctc`, you can sanity-check dependencies and GPU visibility:
-
-```bash
-python3 verify_env.py
+cd src
+conda run -n cctc --no-capture-output bash run_pipeline.sh
 ```
 
 ---
