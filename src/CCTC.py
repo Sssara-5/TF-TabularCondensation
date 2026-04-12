@@ -1,96 +1,73 @@
-import os
-import time
+"""
+CCTC: class-wise cctc allocation of cluster counts + Faiss GPU k-means;
+writes condensed synthetic CSVs and run summaries.
+"""
 import json
+import os
+import sys
+import time
+from collections import Counter
+
+import faiss
 import numpy as np
 import pandas as pd
-import faiss
+import torch
 from tqdm import trange
-from collections import Counter
-import threading
-import time
-import numpy as np
-import faiss
-import pynvml
-import random
+
+_PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from config import cli
-from loader_ours import Ours_DataLoaderCreator
+from dataset.loader_cctc import CCTC_DataLoaderCreator
+from utils import cctc_synthetic_output_dir, set_seed, synthetic_csv_filename
 
-def init_nvml():
-    pynvml.nvmlInit()
-    return pynvml.nvmlDeviceGetHandleByIndex(0)
 
-def get_gpu_used(handle):
-    info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-    return info.used 
-
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-
-class GpuMonitor:
-    def __init__(self, interval=0.01, gpu_id=0):
-        self.handle = init_nvml()
-        self.interval = interval
-        self.peak = 0
-        self._running = False
-        self._thread = None
-
-    def _poll(self):
-        while self._running:
-            used = get_gpu_used(self.handle)
-            if used > self.peak:
-                self.peak = used
-            time.sleep(self.interval)
-
-    def start(self):
-        self.peak = 0
-        self._running = True
-        self._thread = threading.Thread(target=self._poll, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        self._running = False
-        if self._thread:
-            self._thread.join()
-        return self.peak / 1024**2
-
-class GreedyCondense:
-    def __init__(self, X_all, y_all, num_classes, reduction_rate, faiss_res, max_steps=100,  gamma= 1, device='CPU', use_gpu=True):
+class CCTCCondense:
+    def __init__(
+        self,
+        X_all,
+        y_all,
+        num_classes,
+        reduction_rate,
+        faiss_res,
+        max_steps=100,
+        gamma=1,
+        device="CPU",
+    ):
         self.X_all = X_all
         self.y_all = y_all
         self.num_classes = num_classes
         self.reduction_rate = reduction_rate
         self.K = int(len(X_all) * reduction_rate)
+
         self.class_data = {c: X_all[y_all == c] for c in range(num_classes)}
+
         self.k_max_c = {
             c: max(1, min(self.K - (self.num_classes - 1), self.class_data[c].shape[0]))
             for c in range(num_classes)
         }
         self.k_max = max(self.k_max_c.values())
+
         self.k_min = 1
         self.faiss_res = faiss_res
         self.loss_matrix = np.full((num_classes, self.k_max), np.inf, dtype=np.float64)
         self.max_steps = max_steps
-        self.use_gpu = use_gpu
         self.gamma = gamma
         self.device = device
-        self.epoch = 1
-        self.src_list=[]
-        self.dst_list=[]
-
+        self.src_list = []
+        self.dst_list = []
 
     def run_class_kmeans(self, X, k, niter=100):
         if not isinstance(X, np.ndarray):
             X = np.array(X)
-      
         if X.ndim != 2:
-            raise ValueError("X must be a 2D array")        
+            raise ValueError("X must be a 2D array")
         if k <= 0:
             raise ValueError("k must be positive")
         k = min(k, len(X))
 
-        X = np.ascontiguousarray(X, dtype='float32')
+        X = np.ascontiguousarray(X, dtype="float32")
         n, d = X.shape
 
         clustering = faiss.Clustering(d, k)
@@ -112,7 +89,6 @@ class GreedyCondense:
             weight = 1.0 / (n ** self.gamma)
             loss = ssd * weight
             return loss, final_centroids
-            
         except Exception as e:
             print(f"K-means clustering failed: {e}")
             raise
@@ -125,15 +101,15 @@ class GreedyCondense:
             idx = k - 1
             if self.loss_matrix[c, idx] == np.inf:
                 Xc = self.class_data[c]
-                self.loss_matrix[c, idx], _ = self.run_class_kmeans(Xc, k)            
-            total += self.loss_matrix[c, idx] 
+                self.loss_matrix[c, idx], _ = self.run_class_kmeans(Xc, k)
+            total += self.loss_matrix[c, idx]
         return total
 
-    def src_2_des(self,current):
+    def src_2_des(self, current):
         for i in range(self.num_classes):
-            if current[i]>self.k_min:
+            if current[i] > self.k_min:
                 self.src_list.append(i)
-            if current[i]<self.k_max_c[i]:
+            if current[i] < self.k_max_c[i]:
                 self.dst_list.append(i)
 
     def update_src_2_des(self, neighbor, c1, targets):
@@ -154,7 +130,6 @@ class GreedyCondense:
                     self.src_list.append(c2)
 
     def allocate_real_step(self, current, c1, real_step, k_max_c, dst_list):
-
         neighbor = current.copy()
         neighbor[c1] -= real_step
 
@@ -190,7 +165,7 @@ class GreedyCondense:
 
         return neighbor
 
-    def greedy(self):
+    def cctc(self):
         init_dict = compute_num_class_dict(self.y_all, self.reduction_rate, False)
         current = [init_dict[c] for c in range(self.num_classes)]
         self.src_list.clear()
@@ -203,7 +178,7 @@ class GreedyCondense:
         step = max(int(std_dev), 1)
 
         if not self.src_list or not self.dst_list:
-            return init_dict, best, best_cost, self.epoch
+            return init_dict, best, best_cost
 
         early_stop_threshold = 0.01
         early_stop_patience = 10
@@ -215,7 +190,7 @@ class GreedyCondense:
 
             c1 = np.random.choice(self.src_list)
             neighbor = current.copy()
-            real_step= np.random.randint(1, step + 1)
+            real_step = np.random.randint(1, step + 1)
             neighbor[c1] -= real_step
             if neighbor[c1] < self.k_min:
                 continue
@@ -224,10 +199,10 @@ class GreedyCondense:
                 c1=c1,
                 real_step=real_step,
                 k_max_c=self.k_max_c,
-                dst_list=self.dst_list
+                dst_list=self.dst_list,
             )
             if neighbor is None:
-                continue 
+                continue
 
             cost_n = self.get_cost(neighbor)
             delta = cost_n - current_cost
@@ -235,7 +210,7 @@ class GreedyCondense:
             if delta < 0:
                 targets = [c for c in range(self.num_classes) if neighbor[c] > current[c]]
                 self.update_src_2_des(neighbor, c1, targets)
-                current      = neighbor
+                current = neighbor
                 current_cost = cost_n
                 step = max(step // 2, 1)
 
@@ -246,22 +221,20 @@ class GreedyCondense:
             else:
                 accept = False
 
-            if not accept and cost_n < current_cost - early_stop_threshold:
-                small_delta_count = 0
+            if not accept and abs(delta) < early_stop_threshold:
+                small_delta_count += 1
             else:
-                small_delta_count += 1       
+                small_delta_count = 0
             if small_delta_count >= early_stop_patience:
-                self.epoch = it +1
-                return init_dict, best, best_cost, self.epoch
-        self.epoch = it + 1        
-        return init_dict, best, best_cost, self.epoch
-    
+                return init_dict, best, best_cost
+        return init_dict, best, best_cost
+
 
 def compute_num_class_dict(labels, reduction_rate, balance):
     counter = Counter(labels)
     N = len(labels)
     C = len(counter)
-    K = int(N * reduction_rate)          
+    K = int(N * reduction_rate)
 
     num_class = {}
     if balance:
@@ -283,40 +256,48 @@ def compute_num_class_dict(labels, reduction_rate, balance):
         num_class[c_max] -= sub
     return num_class
 
+
 def main():
     args = cli(standalone_mode=False)
     set_seed(42)
-    args.method = "ours"
-    dl_creator = Ours_DataLoaderCreator(args)
-    dst_train, num_classes, _ = dl_creator.load_ours()
+    args.method = "cctc"
+    dl_creator = CCTC_DataLoaderCreator(args)
+    dst_train, num_classes, _ = dl_creator.load_train()
 
     X_all, y_all = dst_train.tensors
-    X_all = X_all.numpy().astype('float32')
-    y_all = y_all.numpy().astype('int32').flatten()
+    X_all = X_all.numpy().astype("float32")
+    y_all = y_all.numpy().astype("int32").flatten()
     args.num_classes = num_classes
-    monitor = GpuMonitor(interval=0.01)
-    monitor.start()
-    use_gpu = (args.device.type == "cuda")
-    gpu_res = faiss.StandardGpuResources() if use_gpu else None
-    greedy_start = time.time()
-    max_steps =1000
-    condense = GreedyCondense(
-        X_all, y_all, num_classes, args.reduction_rate, gpu_res, max_steps=max_steps, gamma=args.gamma, device=args.device,
-        use_gpu=(args.device.type == "cuda")
-    )
-    init_dict, best_solution, best_cost,real_epoch = condense.greedy()
-    greedy_end = time.time()
-    greedy_time = greedy_end-greedy_start
-    peak_gpu = monitor.stop()
 
-    args.our_verison = "faiss"
-    results_dir = os.path.join("Results", "ours_datasets", args.dataset, args.method, args.categorical_method, args.our_verison, f"{args.reduction_rate}",f"{args.gamma}")
-    
+    use_gpu = args.device.type == "cuda"
+    gpu_res = faiss.StandardGpuResources() if use_gpu else None
+    cctc_start = time.time()
+    max_steps = 1000
+    condense = CCTCCondense(
+        X_all,
+        y_all,
+        num_classes,
+        args.reduction_rate,
+        gpu_res,
+        max_steps=max_steps,
+        gamma=args.gamma,
+        device=args.device,
+    )
+    init_dict, best_solution, best_cost = condense.cctc()
+    cctc_end = time.time()
+    cctc_time = cctc_end - cctc_start
+
+    results_dir = cctc_synthetic_output_dir(
+        _PROJECT_ROOT,
+        args.dataset,
+        args.categorical_method,
+        args.reduction_rate,
+        args.gamma,
+    )
     os.makedirs(results_dir, exist_ok=True)
 
     select_times = []
-    
-    for seed in trange(args.num_exp, desc='Generate Runs'):
+    for seed in trange(args.num_exp, desc="Generate Runs"):
         set_seed(seed)
         start_time = time.time()
         all_centroids = []
@@ -326,26 +307,28 @@ def main():
             all_centroids.append(centroids)
             all_labels.extend([c] * centroids.shape[0])
         merged = np.vstack(all_centroids)
-        df = pd.DataFrame(merged, columns=[f'feat_{i}' for i in range(merged.shape[1])])
-        df['target'] = all_labels
+        df = pd.DataFrame(merged, columns=[f"feat_{i}" for i in range(merged.shape[1])])
+        df["target"] = all_labels
         elapsed = time.time() - start_time
         select_times.append(elapsed)
-        csv_path = os.path.join(results_dir, f"{args.dataset}_{args.categorical_method}_{args.reduction_rate}_seed{seed}.csv")
+        csv_path = os.path.join(
+            results_dir,
+            synthetic_csv_filename(args.dataset, args.categorical_method, args.reduction_rate, seed),
+        )
         df.to_csv(csv_path, index=False)
 
     avg_time = np.mean(select_times)
-    init_clean = { str(k): int(v) for k, v in init_dict.items() }
+
+    init_clean = {str(k): int(v) for k, v in init_dict.items()}
     output = {
-        "initial solution":init_clean,
+        "initial_solution": init_clean,
         "best_solution": best_solution,
         "best_cost": best_cost,
-        "greedy_time": greedy_time,
-        "avg_generation_time_sec": avg_time,
-        "peak_gpu_memory_mb": peak_gpu,
-        "real_epoch":real_epoch
+        "cctc_time": cctc_time,
+        "avg_generation_time_sec": avg_time
     }
     json_path = os.path.join(results_dir, "results_summary.json")
-    with open(json_path, 'w') as f:
+    with open(json_path, "w") as f:
         json.dump(output, f, indent=4)
 
 if __name__ == "__main__":

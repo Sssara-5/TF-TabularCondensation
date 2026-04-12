@@ -1,0 +1,14 @@
+# Run outputs (do not commit)
+src/Results/
+src/logs/
+
+# Generated data under dataset/ (keep *.py only)
+src/dataset/download_datasets/
+src/dataset/preprocessed_datasets/
+src/dataset/categorical_encoder_cctc/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python

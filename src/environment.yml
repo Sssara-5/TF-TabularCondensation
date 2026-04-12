@@ -1,0 +1,25 @@
+# Conda env for code_ours (CCTC + preprocess + eval).
+# Create:  conda env create -f environment.yml
+# Activate: conda activate cctc
+#
+# Adjust pytorch-cuda=12.4 to match your driver (see pytorch.org).
+name: cctc
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pytorch
+  - pytorch-cuda=12.4
+  - faiss-gpu
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - tqdm
+  - joblib
+  - click
+  - openml
+  - skrub
