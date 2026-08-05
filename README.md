@@ -1,6 +1,6 @@
 # Efficient and Fair Tabular Data Condensation
 
-This is the official implementation of our **C²TC** framework and its fair variant **Fair-CCTC**, as presented in **“Efficient and Fair Tabular Data Condensation.”**
+This is the official implementation of our **C²TC** framework and its fair variant **Fair-C²TC**, as presented in **“Efficient and Fair Tabular Data Condensation.”**
 
 ## 📦 Installation
 
@@ -40,7 +40,7 @@ conda run -n cctc --no-capture-output bash run_pipeline.sh
 
 
 
-### Fair-CCTC
+### Fair-C²TC
 
 ```bash
 cd src
