@@ -1,12 +1,10 @@
-# **C²TC**-TabularCondensation
+# Efficient and Fair Tabular Data Condensation
 
-Official implementation of **“C²TC: A Training-Free Framework for Efficient Tabular Data Condensation”**.
-
----
+This is the official implementation of our **C²TC** framework and its fair variant **Fair-C²TC**, as presented in **“Efficient and Fair Tabular Data Condensation.”**
 
 ## 📦 Installation
 
-Follow the steps below to set up C²TC for local development.
+Follow the steps below to set up the environment.
 
 ### 1) Clone the repo
 
@@ -39,6 +37,8 @@ conda run -n cctc --no-capture-output bash run_pipeline.sh
 ```
 
 ---
+
+
 
 ## 📖 Citation
 
