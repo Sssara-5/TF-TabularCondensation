@@ -79,6 +79,62 @@ def preprocessed_dataset_dir(project_root, categorical_method, dataset_name):
     )
 
 
+def fair_preprocessed_dataset_dir(project_root, dataset_name, use_op=False):
+    """
+    Fair preprocessed input leaf:
+      dataset/preprocessed_datasets_fair/<dataset>/
+      dataset/preprocessed_datasets_fair_op/<dataset>/
+    """
+    folder = "preprocessed_datasets_fair_op" if use_op else "preprocessed_datasets_fair"
+    return os.path.join(project_root, "dataset", folder, dataset_name)
+
+
+def is_fair_pipeline(args) -> bool:
+    """True for fair / fair+OP runs (--fair or --use_op)."""
+    return bool(getattr(args, "fair", False) or getattr(args, "use_op", False))
+
+
+def resolve_cctc_method_tag(args) -> str:
+    """
+    Path segment under Results/cctc_datasets/<dataset>/<tag>/...
+      standard: categorical_method (e.g. autoencoder)
+      fair:     'fair'
+      fair+OP:  'op'
+    """
+    if is_fair_pipeline(args):
+        return "op" if getattr(args, "use_op", False) else "fair"
+    return args.categorical_method
+
+
+def resolve_preprocessed_dir(project_root, args) -> str:
+    """
+    Real preprocessed leaf used by loaders / eval:
+      standard: dataset/preprocessed_datasets/<categorical_method>/<dataset>/
+      fair:     dataset/preprocessed_datasets_fair/<dataset>/
+      fair+OP:  dataset/preprocessed_datasets_fair_op/<dataset>/
+    """
+    if is_fair_pipeline(args):
+        return fair_preprocessed_dataset_dir(
+            project_root,
+            args.dataset,
+            use_op=bool(getattr(args, "use_op", False)),
+        )
+    return preprocessed_dataset_dir(
+        project_root, args.categorical_method, args.dataset
+    )
+
+
+def resolve_cctc_synthetic_dir(project_root, args) -> str:
+    """Results/cctc_datasets/<dataset>/<method_tag>/<rr>/<gamma>/"""
+    return cctc_synthetic_output_dir(
+        project_root,
+        args.dataset,
+        resolve_cctc_method_tag(args),
+        args.reduction_rate,
+        args.gamma,
+    )
+
+
 def cctc_synthetic_output_dir(
     project_root,
     dataset_name,
@@ -86,7 +142,7 @@ def cctc_synthetic_output_dir(
     reduction_rate,
     gamma,
 ):
-    """Directory where CCTC writes synthetic CSVs; SynDataLoaderCreator reads the same path."""
+    """Directory where CCTC / fair_CCTC write synthetic CSVs."""
     return os.path.join(
         project_root,
         "Results",

@@ -1,4 +1,4 @@
-"""Load CCTC synthetic CSVs plus matching preprocessed val/test and info JSON."""
+"""Load CCTC / fair_CCTC synthetic CSVs plus matching preprocessed val/test and info JSON."""
 import glob
 import json
 import os
@@ -12,7 +12,13 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from utils import cctc_synthetic_output_dir, preprocessed_dataset_dir
+from utils import (
+    is_fair_pipeline,
+    resolve_cctc_method_tag,
+    resolve_cctc_synthetic_dir,
+    resolve_preprocessed_dir,
+    synthetic_csv_filename,
+)
 
 
 class SynDataLoaderCreator:
@@ -22,31 +28,49 @@ class SynDataLoaderCreator:
             print(f"[SynDataLoader] Expected args.method=='cctc', got {self.args.method!r}.")
             sys.exit(1)
 
-        self.syn_dataset_folder = cctc_synthetic_output_dir(
-            _PROJECT_ROOT,
-            self.args.dataset,
-            self.args.categorical_method,
-            self.args.reduction_rate,
-            self.args.gamma,
-        )
-        self.base_path = preprocessed_dataset_dir(
-            _PROJECT_ROOT, self.args.categorical_method, self.args.dataset
-        )
+        self.method_tag = resolve_cctc_method_tag(self.args)
+        self.syn_dataset_folder = resolve_cctc_synthetic_dir(_PROJECT_ROOT, self.args)
+        self.base_path = resolve_preprocessed_dir(_PROJECT_ROOT, self.args)
         self.val_csv_path = os.path.join(self.base_path, f"{self.args.dataset}_val.csv")
         self.test_csv_path = os.path.join(self.base_path, f"{self.args.dataset}_test.csv")
-        self.info_json_path = os.path.join(self.base_path, f"{self.args.dataset}_preprocessed_info.json")
+        self.info_json_path = os.path.join(
+            self.base_path, f"{self.args.dataset}_preprocessed_info.json"
+        )
+        pipe = "fair" if is_fair_pipeline(self.args) else "standard"
+        print(
+            f"[SynDataLoader] pipeline={pipe}, method_tag={self.method_tag}\n"
+            f"  syn:  {self.syn_dataset_folder}\n"
+            f"  real: {self.base_path}"
+        )
 
     def load_syn_data(self):
         seed_dfs = {}
         trainloader_list = []
 
         for seed in range(self.args.num_exp):
-            matches = glob.glob(os.path.join(self.syn_dataset_folder, f"*seed{seed}*.csv"))
-            if not matches:
-                print(f"[Syn_data] Not Found Synthetic Data CSV for seed{seed} in:\n  {self.syn_dataset_folder}")
-                sys.exit(1)
-            print(f"[Syn_data] Found Synthetic Data CSV for seed{seed}:\n  {matches}")
-            seed_dfs[seed] = pd.read_csv(matches[0])
+            # Exact filename (avoid *seed1* matching seed10).
+            csv_name = synthetic_csv_filename(
+                self.args.dataset,
+                self.method_tag,
+                self.args.reduction_rate,
+                seed,
+            )
+            csv_path = os.path.join(self.syn_dataset_folder, csv_name)
+            if not os.path.exists(csv_path):
+                # Fallback glob with word-boundary style pattern.
+                matches = glob.glob(
+                    os.path.join(self.syn_dataset_folder, f"*seed{seed}.csv")
+                )
+                if not matches:
+                    print(
+                        f"[Syn_data] Not Found Synthetic Data CSV for seed{seed} in:\n"
+                        f"  {self.syn_dataset_folder}\n"
+                        f"  expected: {csv_name}"
+                    )
+                    sys.exit(1)
+                csv_path = matches[0]
+            print(f"[Syn_data] Found Synthetic Data CSV for seed{seed}:\n  {csv_path}")
+            seed_dfs[seed] = pd.read_csv(csv_path)
 
         if os.path.exists(self.val_csv_path):
             print(f"[Val_data] Found Validation Data CSV:\n  {self.val_csv_path}")
@@ -76,7 +100,9 @@ class SynDataLoaderCreator:
         numerical_feature_idx = info.get("numerical_feature_idx", [])
         categorical_feature_count = info.get("categorical_feature_count", 0)
         categorical_feature_idx = info.get("categorical_feature_idx", [])
-        unique_values_per_categorical_feature = list(info.get("unique_values_per_categorical_feature", {}).values())
+        unique_values_per_categorical_feature = list(
+            info.get("unique_values_per_categorical_feature", {}).values()
+        )
 
         for seed in sorted(seed_dfs.keys()):
             df_train = seed_dfs[seed]
@@ -89,7 +115,9 @@ class SynDataLoaderCreator:
             dst_train = TensorDataset(X_train_tensor, y_train_tensor)
             L = len(dst_train)
             real_bs = min(2048, L)
-            trainloader = DataLoader(dst_train, batch_size=real_bs, shuffle=True, drop_last=True)
+            trainloader = DataLoader(
+                dst_train, batch_size=real_bs, shuffle=True, drop_last=(L > 1)
+            )
             trainloader_list.append(trainloader)
 
         val_attr = df_val.columns[:-1]

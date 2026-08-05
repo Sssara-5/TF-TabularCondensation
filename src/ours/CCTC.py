@@ -14,7 +14,7 @@ import pandas as pd
 import torch
 from tqdm import trange
 
-_PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -58,7 +58,7 @@ class CCTCCondense:
         self.src_list = []
         self.dst_list = []
 
-    def run_class_kmeans(self, X, k, niter=100):
+    def run_class_kmeans(self, X, k, niter=100, kmeans_seed=42):
         if not isinstance(X, np.ndarray):
             X = np.array(X)
         if X.ndim != 2:
@@ -72,7 +72,7 @@ class CCTCCondense:
 
         clustering = faiss.Clustering(d, k)
         clustering.niter = niter
-        clustering.seed = 42
+        clustering.seed = kmeans_seed
         clustering.min_points_per_centroid = 1
         clustering.nredo = 1
         clustering.verbose = False
@@ -303,7 +303,9 @@ def main():
         all_centroids = []
         all_labels = []
         for c, k in enumerate(best_solution):
-            _, centroids = condense.run_class_kmeans(condense.class_data[c], k)
+            _, centroids = condense.run_class_kmeans(
+                condense.class_data[c], k, kmeans_seed=42 + seed
+            )
             all_centroids.append(centroids)
             all_labels.extend([c] * centroids.shape[0])
         merged = np.vstack(all_centroids)

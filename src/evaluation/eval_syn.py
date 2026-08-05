@@ -1,5 +1,8 @@
 """
 Train an MLP on CCTC synthetic CSVs and evaluate on the real preprocessed test set.
+
+Fair pipeline (--fair / --use_op) also reports ΔDP / ΔEO using binary S from the
+base (non-OP) fair test CSV.
 """
 import json
 import os
@@ -17,8 +20,17 @@ if _PROJECT_ROOT not in sys.path:
 
 from config import cli
 from dataset.loader_syn import SynDataLoaderCreator
+from evaluation.eval_utils import compute_fairness, load_base_binary_sensitive
 from model.model_utils import get_network
-from utils import get_time, measure_time, param_dirname, set_seed, setup_logger
+from utils import (
+    get_time,
+    is_fair_pipeline,
+    measure_time,
+    param_dirname,
+    resolve_cctc_method_tag,
+    set_seed,
+    setup_logger,
+)
 
 
 class EvaluatorSyn:
@@ -29,12 +41,15 @@ class EvaluatorSyn:
             self.logger.error("eval_syn expects --method cctc (paths match CCTC outputs).")
             sys.exit(1)
 
+        self.method_tag = resolve_cctc_method_tag(self.args)
+        self.compute_fair_metrics = is_fair_pipeline(self.args)
+        # Same leaf order as eval_whole: .../<dataset>/<method_tag>/...
         self.save_path_base = os.path.join(
             _PROJECT_ROOT,
             "Results",
             "cctc_eval_syn",
-            self.args.categorical_method,
             self.args.dataset,
+            self.method_tag,
             param_dirname(self.args.reduction_rate),
             param_dirname(self.args.gamma),
             f"{self.args.dataset}_{self.args.method}_r{param_dirname(self.args.reduction_rate)}_"
@@ -61,10 +76,25 @@ class EvaluatorSyn:
             self.logger.error("[Error] No synthetic datasets found. Exiting...")
             sys.exit(1)
 
+        s_test = None
+        if self.compute_fair_metrics:
+            s_test = load_base_binary_sensitive(
+                _PROJECT_ROOT, self.args.dataset, split="test"
+            )
+            print(
+                f"[Eval_syn] Fair metrics ON (ΔDP/ΔEO); "
+                f"S from base fair test |S=0|={(s_test == 0).sum()}, |S=1|={(s_test == 1).sum()}"
+            )
+        else:
+            print("[Eval_syn] Fair metrics OFF (standard pipeline)")
+
         combined = {
             "test_accuracy": [],
             "macro_f1": [],
+            "delta_dp": [],
+            "delta_eo": [],
         }
+        # Outer: each synthetic CSV; inner: different MLP init seeds per CSV.
         for exp in trange(len(trainloader_list), desc="Experiments", unit="exp"):
             for seed_i in range(self.args.num_exp):
                 set_seed(seed_i)
@@ -80,19 +110,34 @@ class EvaluatorSyn:
                     self.args.device,
                 )
                 lr = self.args.lr_net
-                optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
+                optimizer = torch.optim.SGD(
+                    net.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005
+                )
                 criterion = nn.CrossEntropyLoss().to(self.args.device)
                 trainloader = trainloader_list[exp]
 
                 _, _ = self.train_model(trainloader, net, criterion, optimizer)
 
-                test_accuracy, macro_f1 = self.test_epoch(testloader, net)
+                test_accuracy, macro_f1, y_pred, y_true = self.test_epoch(testloader, net)
 
-                tqdm.write(
-                    f"{get_time()} [Exp {exp} Seed {seed_i}] Training finished. "
+                msg = (
+                    f"{get_time()} [Exp {exp} Seed {seed_i}] "
                     f"Test Accuracy: {test_accuracy:.4f}, Macro-F1: {macro_f1:.4f}"
                 )
+                if self.compute_fair_metrics:
+                    if len(s_test) != len(y_true):
+                        raise ValueError(
+                            f"S/test length mismatch: |S|={len(s_test)} |y|={len(y_true)}. "
+                            "Base and eval test splits must be row-aligned."
+                        )
+                    fair = compute_fairness(y_pred, y_true, s_test)
+                    delta_dp = round(float(fair["delta_dp"]), 6)
+                    delta_eo = round(float(fair["delta_eo"]), 6)
+                    combined["delta_dp"].append(delta_dp)
+                    combined["delta_eo"].append(delta_eo)
+                    msg += f", ΔDP: {delta_dp:.4f}, ΔEO: {delta_eo:.4f}"
 
+                tqdm.write(msg)
                 combined["test_accuracy"].append(test_accuracy)
                 combined["macro_f1"].append(macro_f1)
 
@@ -102,6 +147,11 @@ class EvaluatorSyn:
             "avg_macro_f1": round(np.mean(combined["macro_f1"]), 4),
             "std_macro_f1": round(np.std(combined["macro_f1"]), 4),
         }
+        if self.compute_fair_metrics:
+            overall_results["avg_delta_dp"] = round(np.mean(combined["delta_dp"]), 4)
+            overall_results["std_delta_dp"] = round(np.std(combined["delta_dp"]), 4)
+            overall_results["avg_delta_eo"] = round(np.mean(combined["delta_eo"]), 4)
+            overall_results["std_delta_eo"] = round(np.std(combined["delta_eo"]), 4)
         return overall_results
 
     @measure_time
@@ -154,8 +204,10 @@ class EvaluatorSyn:
                 all_preds.extend(predictions.cpu().numpy())
 
         avg_acc = total_correct / total_samples
+        all_labels = np.asarray(all_labels)
+        all_preds = np.asarray(all_preds)
         macro_f1 = f1_score(all_labels, all_preds, average="macro")
-        return avg_acc, macro_f1
+        return avg_acc, macro_f1, all_preds, all_labels
 
 
 def main():

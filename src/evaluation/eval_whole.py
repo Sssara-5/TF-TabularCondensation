@@ -1,6 +1,9 @@
 """
 Train an MLP on the full real training split and evaluate on test.
-Uses the same preprocessed tree as CCTC: dataset/preprocessed_datasets/...
+Uses resolve_preprocessed_dir (standard or fair / fair+OP).
+
+Fair pipeline (--fair / --use_op) also reports ΔDP / ΔEO using binary S from the
+base (non-OP) fair test CSV.
 """
 import json
 import os
@@ -18,22 +21,32 @@ if _PROJECT_ROOT not in sys.path:
 
 from config import cli
 from dataset.loader_whole import DataLoaderCreator
+from evaluation.eval_utils import compute_fairness, load_base_binary_sensitive
 from model.model_utils import get_network
-from utils import get_time, measure_time, set_seed, setup_logger
+from utils import (
+    get_time,
+    is_fair_pipeline,
+    measure_time,
+    resolve_cctc_method_tag,
+    set_seed,
+    setup_logger,
+)
 
 
 class EvaluatorWhole:
     def __init__(self, args):
         self.args = args
         self.logger = args.logger
+        self.method_tag = resolve_cctc_method_tag(self.args)
+        self.compute_fair_metrics = is_fair_pipeline(self.args)
 
         self.save_path = os.path.join(
             _PROJECT_ROOT,
             "Results",
             "cctc_eval_whole",
             str(self.args.dataset),
-            self.args.categorical_method,
-            f"{self.args.dataset}_{self.args.categorical_method}_{self.args.eval_model}_"
+            self.method_tag,
+            f"{self.args.dataset}_{self.method_tag}_{self.args.eval_model}_"
             f"ep{self.args.epoch_eval_train}_bs{self.args.batch_train}_lr{self.args.lr_net}",
         )
         os.makedirs(self.save_path, exist_ok=True)
@@ -53,9 +66,23 @@ class EvaluatorWhole:
             unique_values_per_categorical_feature,
         ) = dl_creator.load_data()
 
+        s_test = None
+        if self.compute_fair_metrics:
+            s_test = load_base_binary_sensitive(
+                _PROJECT_ROOT, self.args.dataset, split="test"
+            )
+            print(
+                f"[Eval_whole] Fair metrics ON (ΔDP/ΔEO); "
+                f"S from base fair test |S=0|={(s_test == 0).sum()}, |S=1|={(s_test == 1).sum()}"
+            )
+        else:
+            print("[Eval_whole] Fair metrics OFF (standard pipeline)")
+
         all_results = {
             "test_accuracy": [],
             "macro_f1": [],
+            "delta_dp": [],
+            "delta_eo": [],
         }
 
         for exp in trange(self.args.num_exp, desc="Experiments", unit="exp"):
@@ -78,13 +105,29 @@ class EvaluatorWhole:
 
             _, _ = self.train_model(trainloader, net, criterion, optimizer)
 
-            test_loss, test_accuracy, macro_f1 = self.test_model(testloader, net, criterion)
-
-            tqdm.write(f"{get_time()} [Eval {exp}]")
-            tqdm.write(
-                f"Test Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}, macro_f1: {macro_f1:.4f}"
+            test_loss, test_accuracy, macro_f1, y_pred, y_true = self.test_model(
+                testloader, net, criterion
             )
 
+            msg = (
+                f"{get_time()} [Eval {exp}] "
+                f"Test Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}, "
+                f"macro_f1: {macro_f1:.4f}"
+            )
+            if self.compute_fair_metrics:
+                if len(s_test) != len(y_true):
+                    raise ValueError(
+                        f"S/test length mismatch: |S|={len(s_test)} |y|={len(y_true)}. "
+                        "Base and eval test splits must be row-aligned."
+                    )
+                fair = compute_fairness(y_pred, y_true, s_test)
+                delta_dp = round(float(fair["delta_dp"]), 6)
+                delta_eo = round(float(fair["delta_eo"]), 6)
+                all_results["delta_dp"].append(delta_dp)
+                all_results["delta_eo"].append(delta_eo)
+                msg += f", ΔDP: {delta_dp:.4f}, ΔEO: {delta_eo:.4f}"
+
+            tqdm.write(msg)
             all_results["test_accuracy"].append(test_accuracy)
             all_results["macro_f1"].append(macro_f1)
 
@@ -134,8 +177,10 @@ class EvaluatorWhole:
 
         test_accuracy = correct / total if total > 0 else 0.0
         avg_loss = test_loss / total if total > 0 else 0.0
+        all_labels = np.asarray(all_labels)
+        all_preds = np.asarray(all_preds)
         macro_f1 = f1_score(all_labels, all_preds, average="macro")
-        return avg_loss, test_accuracy, macro_f1
+        return avg_loss, test_accuracy, macro_f1, all_preds, all_labels
 
 
 def main():
@@ -149,13 +194,20 @@ def main():
     evaluator = EvaluatorWhole(args)
     all_results = evaluator.evaluate_whole()
 
+    summary = {
+        "test_accuracy": round(np.mean(all_results["test_accuracy"]), 4),
+        "std_test_accuracy": round(np.std(all_results["test_accuracy"]), 4),
+        "macro_f1": round(np.mean(all_results["macro_f1"]), 4),
+        "std_macro_f1": round(np.std(all_results["macro_f1"]), 4),
+    }
+    if evaluator.compute_fair_metrics:
+        summary["avg_delta_dp"] = round(np.mean(all_results["delta_dp"]), 4)
+        summary["std_delta_dp"] = round(np.std(all_results["delta_dp"]), 4)
+        summary["avg_delta_eo"] = round(np.mean(all_results["delta_eo"]), 4)
+        summary["std_delta_eo"] = round(np.std(all_results["delta_eo"]), 4)
+
     final_output = {
-        "Final Results (Average Over All Experiments)": {
-            "test_accuracy": round(np.mean(all_results["test_accuracy"]), 4),
-            "std_test_accuracy": round(np.std(all_results["test_accuracy"]), 4),
-            "macro_f1": round(np.mean(all_results["macro_f1"]), 4),
-            "std_macro_f1": round(np.std(all_results["macro_f1"]), 4),
-        },
+        "Final Results (Average Over All Experiments)": summary,
     }
 
     json_path = os.path.join(evaluator.save_path, "final_results.json")

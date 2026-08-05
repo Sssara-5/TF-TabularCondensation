@@ -83,6 +83,26 @@ def dict2obj(d):
     ),
 )
 @click.option("--num_exp", default=5, type=int, show_default=True, help="Number of synthetic CSV runs.")
+@click.option(
+    "--fair",
+    is_flag=True,
+    default=False,
+    help="Use fair pipeline paths (preprocessed_datasets_fair[_op], method tag fair/op).",
+)
+@click.option(
+    "--use_op",
+    is_flag=True,
+    default=True,
+    help="Fair-CCTC: use OP features (preprocessed_datasets_fair_op, method tag 'op'). "
+    "Fair-CCTC includes OP by default in run_fair_pipeline.sh.",
+)
+@click.option(
+    "--fair_rho",
+    default=1.0,
+    type=float,
+    show_default=True,
+    help="fair_CCTC: cluster-reweight intensity in [0, 1].",
+)
 
 @click.option(
     "--eval_model",
@@ -99,7 +119,7 @@ def dict2obj(d):
 )
 @click.option(
     "--lr_net",
-    default=0.002,
+    default=0.001,
     type=float,
     show_default=True,
     help="Learning rate for the evaluation classifier.",
@@ -118,6 +138,9 @@ def cli(ctx, **kwargs):
     kwargs["categorical_method"] = resolve_categorical_method(
         kwargs["dataset"], kwargs.get("categorical_method")
     )
+    # --use_op is fair-only; treat it as enabling the fair pipeline.
+    if kwargs.get("use_op"):
+        kwargs["fair"] = True
     args = dict2obj(kwargs)
     device_id = int(args.device)
     assert device_id < torch.cuda.device_count(), f"Invalid device ID {device_id}"

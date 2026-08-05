@@ -1,4 +1,4 @@
-"""Load full real train/val/test splits for whole-dataset evaluation (same preprocess tree as CCTC)."""
+"""Load full real train/val/test for whole-dataset evaluation (standard or fair preprocess tree)."""
 import json
 import os
 import sys
@@ -11,19 +11,29 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from utils import preprocessed_dataset_dir
+from utils import is_fair_pipeline, resolve_cctc_method_tag, resolve_preprocessed_dir
 
 
 class DataLoaderCreator:
-    """Paths: dataset/preprocessed_datasets/<categorical_method>/<dataset>/."""
+    """
+    Paths:
+      standard: dataset/preprocessed_datasets/<categorical_method>/<dataset>/
+      fair:     dataset/preprocessed_datasets_fair/<dataset>/
+      fair+OP:  dataset/preprocessed_datasets_fair_op/<dataset>/
+    """
 
     def __init__(self, args):
         self.args = args
-        base_path = preprocessed_dataset_dir(_PROJECT_ROOT, self.args.categorical_method, self.args.dataset)
-        self.train_csv_path = os.path.join(base_path, f"{self.args.dataset}_train.csv")
-        self.val_csv_path = os.path.join(base_path, f"{self.args.dataset}_val.csv")
-        self.test_csv_path = os.path.join(base_path, f"{self.args.dataset}_test.csv")
-        self.info_json_path = os.path.join(base_path, f"{self.args.dataset}_preprocessed_info.json")
+        self.method_tag = resolve_cctc_method_tag(self.args)
+        self.base_path = resolve_preprocessed_dir(_PROJECT_ROOT, self.args)
+        self.train_csv_path = os.path.join(self.base_path, f"{self.args.dataset}_train.csv")
+        self.val_csv_path = os.path.join(self.base_path, f"{self.args.dataset}_val.csv")
+        self.test_csv_path = os.path.join(self.base_path, f"{self.args.dataset}_test.csv")
+        self.info_json_path = os.path.join(
+            self.base_path, f"{self.args.dataset}_preprocessed_info.json"
+        )
+        pipe = "fair" if is_fair_pipeline(self.args) else "standard"
+        print(f"[WholeLoader] pipeline={pipe}, method_tag={self.method_tag}\n  base: {self.base_path}")
 
     def load_data(self):
         if not os.path.exists(self.train_csv_path):
@@ -77,7 +87,9 @@ class DataLoaderCreator:
         dst_val = TensorDataset(X_val_tensor, y_val_tensor)
         dst_test = TensorDataset(X_test_tensor, y_test_tensor)
 
-        trainloader = DataLoader(dst_train, batch_size=self.args.batch_train, shuffle=True, drop_last=True)
+        trainloader = DataLoader(
+            dst_train, batch_size=self.args.batch_train, shuffle=True, drop_last=True
+        )
         valloader = DataLoader(dst_val, batch_size=self.args.batch_train, shuffle=False)
         testloader = DataLoader(dst_test, batch_size=self.args.batch_train, shuffle=False)
 
@@ -85,7 +97,9 @@ class DataLoaderCreator:
         numerical_feature_idx = info.get("numerical_feature_idx", [])
         categorical_feature_count = info.get("categorical_feature_count", 0)
         categorical_feature_idx = info.get("categorical_feature_idx", [])
-        unique_values_per_categorical_feature = list(info.get("unique_values_per_categorical_feature", {}).values())
+        unique_values_per_categorical_feature = list(
+            info.get("unique_values_per_categorical_feature", {}).values()
+        )
 
         return (
             trainloader,

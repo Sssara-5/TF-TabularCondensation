@@ -1,6 +1,6 @@
 # Efficient and Fair Tabular Data Condensation
 
-This is the official implementation of our **C²TC** framework and its fair variant **Fair-C²TC**, as presented in **“Efficient and Fair Tabular Data Condensation.”**
+This is the official implementation of our **C²TC** framework and its fair variant **Fair-CCTC**, as presented in **“Efficient and Fair Tabular Data Condensation.”**
 
 ## 📦 Installation
 
@@ -9,8 +9,8 @@ Follow the steps below to set up the environment.
 ### 1) Clone the repo
 
 ```bash
-git clone https://github.com/Sssara-5/TF-TabularCondensation.git
-cd TF-TabularCondensation
+git clone https://github.com/Sssara-5/Efficient-Fair-Tabular-Condensation.git
+cd Efficient-Fair-Tabular-Condensation
 ```
 
 ### 2) Environment (Conda recommended)
@@ -24,6 +24,8 @@ conda activate cctc
 
 ## 🚀 Quick start
 
+### C²TC
+
 ```bash
 cd src
 bash run_pipeline.sh
@@ -36,7 +38,21 @@ cd src
 conda run -n cctc --no-capture-output bash run_pipeline.sh
 ```
 
----
+
+
+### Fair-CCTC
+
+```bash
+cd src
+bash run_fair_pipeline.sh
+```
+
+Or without activating the shell:
+
+```bash
+cd src
+conda run -n cctc --no-capture-output bash run_fair_pipeline.sh
+```
 
 
 

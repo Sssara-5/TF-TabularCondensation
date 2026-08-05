@@ -11,8 +11,11 @@ export DATASET="${DATASET:-Adult}"
 export DATASETS="${DATASETS:-${DATASET}}"
 export REDUCTION_RATE="${REDUCTION_RATE:-0.001}"
 export GAMMA="${GAMMA:-0.25}"
-export DEVICE="${DEVICE:-1}"
-export NUM_EXP="${NUM_EXP:-2}"
+export DEVICE="${DEVICE:-0}"
+export NUM_EXP="${NUM_EXP:-5}"
+# Avoid leaking fair-eval flags into the standard pipeline.
+export FAIR=0
+export USE_OP=0
 
 echo "=== Pipeline: DATASET=${DATASET} REDUCTION_RATE=${REDUCTION_RATE} GAMMA=${GAMMA} DEVICE=${DEVICE} ==="
 

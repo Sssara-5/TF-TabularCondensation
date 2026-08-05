@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Train MLP on full real train split; evaluate on test (same preprocessed tree as CCTC).
+# Train MLP on full real train split; evaluate on test (standard C²TC preprocess tree).
+# Paths: dataset/preprocessed_datasets/<categorical_method>/<dataset>/
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
@@ -8,7 +9,7 @@ cd "$ROOT"
 : "${DATASET:=Adult}"
 : "${DEVICE:=0}"
 : "${NUM_EXP:=5}"
-: "${EPOCH_EVAL_TRAIN:=500}"
+: "${EPOCH_EVAL_TRAIN:=100}"
 : "${LR_NET:=0.001}"
 : "${BATCH_TRAIN:=512}"
 

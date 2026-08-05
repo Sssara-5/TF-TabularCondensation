@@ -13,7 +13,7 @@ cd "$ROOT"
 : "${DEVICE:=0}"
 
 echo "[run_cctc] DATASET=${DATASET} REDUCTION_RATE=${REDUCTION_RATE} GAMMA=${GAMMA}"
-"${PYTHON}" CCTC.py \
+"${PYTHON}" ours/CCTC.py \
   --dataset "${DATASET}" \
   --reduction_rate "${REDUCTION_RATE}" \
   --gamma "${GAMMA}" \
